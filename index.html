@@ -150,6 +150,7 @@ button:active{transform:translateY(1px)}
     <div class="row">
       <span class="pill" id="plRace">LONG —</span><span class="pill" id="psRace">SHORT —</span>
       <span class="pill" id="alignPill">ALIGN —</span><span class="pill" id="entropyPill">ENTROPY —</span>
+      <span class="pill" id="zvTilt">ZV TILT —</span><span class="pill" id="zvAmp" style="display:none">AMP VETO · STAND ASIDE</span>
     </div>
     <div class="ladlab">▲ Runway race · P(+T before −350t · 245m)</div>
     <div class="ladder" id="ladderRace"></div>
@@ -167,6 +168,7 @@ button:active{transform:translateY(1px)}
       <div class="kv"><span>Age</span><b id="rwAge">—</b></div>
       <div class="kv"><span>Retrace</span><b id="rwRetr">—</b></div>
       <div class="kv"><span>Pace</span><b id="rwPace">—</b></div>
+      <div class="kv"><span>Flip hazard · age-conditioned (shadow)</span><b id="zvHazard">—</b></div>
     </div>
     <div class="ladlab">▲ Survival · P(extracts ≥ +T more)</div>
     <div id="survCones"></div>
@@ -903,6 +905,7 @@ function render(){
     set("plRace","LONG "+fmtP(sc.pL350)); cls("plRace","pill "+(sc.pL350>=sc.gate(350,350,"watch")?"gold":""));
     set("psRace","SHORT "+fmtP(sc.pS350)); cls("psRace","pill "+(sc.pS350>=sc.gate(350,350,"watch")?"wine":""));
     set("alignPill","ALIGN "+sc.f.align); set("entropyPill","ENTROPY "+sc.f.sent39.toFixed(2));
+    zvRender(sc);
     const A=(side==="LONG"?sc.long:sc.short);
     q("ladderRace").innerHTML=ladderHTML(A[350],350);
     q("ladderTight").innerHTML=ladderHTML(A[150],150);
@@ -929,6 +932,60 @@ function render(){
   }
   renderP33Evidence();
 }
+
+/* ==== ZEVULUN INFUSION · shadow layer (non-authoritative) ====
+   A: age-conditioned flip hazard  B: taker-flow direction tilt (capped)  D: amp exhaustion as abstention veto
+   Depth term of ZEVULUN micro omitted (deferred pending sanction); its fitted coef was 0.010 (negligible).
+   Authority (scanField / arming / biasMain) untouched: display + log only until live evidence promotes. */
+const ZV={
+  hazard:{"1-60m":0.2598,"60-240m":0.1168,"240-720m":0.0424,">720m":0.0132},
+  micro:{mu:[-0.025716,-0.005739],sd:[4.060297,0.066514],coef:[-0.09598,-0.041103],b:-0.020907},
+  amp:{dz:1.441,mlo:-5.031,mhi:5.019,pUpHi:0.4482,pUpLo:0.5618},
+  cap:0.04, candles:[], map:new Map(), ws:null,
+  p:null, tilt:0, lean:"—", veto:false, lastLean:"", lastVeto:false, why:"flow leg connecting"
+};
+function zvHazardFor(age){if(age<60)return{b:"1-60m",p:ZV.hazard["1-60m"]};if(age<240)return{b:"60-240m",p:ZV.hazard["60-240m"]};if(age<720)return{b:"240-720m",p:ZV.hazard["240-720m"]};return{b:">720m",p:ZV.hazard[">720m"]}}
+function zvApplyKline(k){const t=Math.floor(+k.t/60000)*60000;const inc={t,h:+k.h,l:+k.l,c:+k.c,v:+k.v,tb:+k.V||0,x:!!k.x};
+  let c=ZV.map.get(t);
+  if(!c){ZV.map.set(t,inc);ZV.candles.push(inc);ZV.candles.sort((a,b)=>a.t-b.t);
+    if(ZV.candles.length>90){const o=ZV.candles.shift();ZV.map.delete(o.t)}}
+  else{c.h=Math.max(c.h,inc.h);c.l=Math.min(c.l,inc.l);c.c=inc.c;c.v=inc.v;c.tb=inc.tb;c.x=inc.x}
+  if(inc.x)zvCompute();}
+function zvCompute(){
+  const cc=ZV.candles.filter(c=>c.x);const n=cc.length;
+  if(n<41){ZV.p=null;ZV.why="flow memory "+n+"/41";return}
+  let rs=0;for(let i=n-39;i<n;i++)rs+=(cc[i].h-cc[i].l);const r39p=(rs/39)*TICK_MULT; /* avg 39-bar range in points */ if(!(r39p>0)){ZV.p=null;ZV.why="flat range";return}
+  const mom=((cc[n-1].c-cc[n-40].c)*TICK_MULT)/r39p;
+  let dz=0;for(let i=n-39;i<n;i++){const d=cc[i].c-cc[i-1].c;dz+=d>0?1:(d<0?-1:0)}dz/=Math.sqrt(39);
+  let sv=0,st=0,ok=0;for(let i=n-13;i<n;i++){sv+=cc[i].v;st+=cc[i].tb;if(cc[i].tb>0)ok++}
+  if(!(sv>0)||ok<8){ZV.p=null;ZV.why="taker flow not feeding";return}
+  const tf=st/sv-0.5;
+  const A=ZV.amp;let amp=null;
+  if(Math.abs(dz)>=A.dz){if(mom>=A.mhi)amp={lean:"DOWN",pr:1-A.pUpHi};else if(mom<=A.mlo)amp={lean:"UP",pr:A.pUpLo}}
+  const M=ZV.micro,X=[mom,tf];let z=M.b;for(let i=0;i<2;i++)z+=M.coef[i]*(X[i]-M.mu[i])/M.sd[i];
+  ZV.p=1/(1+Math.exp(-z));
+  ZV.tilt=Math.max(-ZV.cap,Math.min(ZV.cap,ZV.p-0.5));
+  ZV.lean=ZV.tilt>0?"UP":(ZV.tilt<0?"DOWN":"FLAT");
+  ZV.ampLean=amp?amp.lean:null; ZV.why=null;}
+function zvConnectFlow(){if(ZV.ws&&(ZV.ws.readyState===0||ZV.ws.readyState===1))return;let ws;
+  try{ws=new WebSocket("wss://fstream.binance.com/ws/1000pepeusdt@kline_1m");ZV.ws=ws}catch(e){return}
+  ws.onopen=()=>p29Log("ZV flow leg connected · Binance kline (taker volume)");
+  ws.onmessage=e=>{try{const m=JSON.parse(e.data);if(m&&m.k)zvApplyKline(m.k)}catch(err){}};
+  ws.onclose=()=>{ZV.ws=null;setTimeout(zvConnectFlow,3000)};ws.onerror=()=>{try{ws.close()}catch(e){}}}
+function zvRender(sc){
+  if(ZV.p==null){set("zvTilt","ZV TILT · "+(ZV.why||"—"));cls("zvTilt","pill");}
+  else{const pct=(ZV.tilt*100).toFixed(1);
+    set("zvTilt","ZV TILT "+(ZV.tilt>=0?"+":"")+pct+"% "+ZV.lean+" · shadow");
+    cls("zvTilt","pill "+(ZV.tilt>0.005?"gold":(ZV.tilt<-0.005?"wine":"")));
+    if(ZV.lean!==ZV.lastLean){p29Log("ZV tilt lean → "+ZV.lean+" (p="+ZV.p.toFixed(3)+", capped "+pct+"%)");ZV.lastLean=ZV.lean;}}
+  const side=sc&&sc.bias?sc.bias:null;
+  ZV.veto=!!(side&&ZV.ampLean&&((side==="LONG"&&ZV.ampLean==="DOWN")||(side==="SHORT"&&ZV.ampLean==="UP")));
+  const vp=q("zvAmp");if(vp)vp.style.display=ZV.veto?"":"none";
+  if(ZV.veto!==ZV.lastVeto){p29Log(ZV.veto?"ZV AMP VETO · exhaustion vs "+side+" field · shadow stand-aside":"ZV amp veto cleared");ZV.lastVeto=ZV.veto;}
+  const L=(typeof CORE!=="undefined"&&CORE.leg)?CORE.leg:null;
+  if(L&&L.dir!==0){const h=zvHazardFor(L.age);set("zvHazard",(h.p*100).toFixed(1)+"%/hr · "+h.b)}
+  else set("zvHazard","—");}
+
 async function start(){
   window.addEventListener("error",e=>{try{p29Log("⚠ "+(e.message||"script error")+(e.lineno?" @"+e.lineno:""))}catch(_){}});
   window.addEventListener("unhandledrejection",e=>{try{p29Log("⚠ rejection: "+((e.reason&&e.reason.message)||e.reason))}catch(_){}});
@@ -940,6 +997,7 @@ async function start(){
   render();
   await bootstrapPapillonCandles();
   await p33OpenPrimary();
+  zvConnectFlow();
   if(P29.candles.length) P29.candles=P29.candles.map(cd=>Object.assign({src:"rest"},cd));
   await p33OpenPrimary();
   render();
