@@ -914,7 +914,7 @@ function render(){
     if(L.dir!==0){
       const dTxt=L.dir===1?"LONG":"SHORT";
       set("rwMain",dTxt+" RUNWAY ALIVE"); cls("rwMain","big "+(L.dir===1?"gold":"wine"));
-      set("rwSub","Ignited "+Math.round(L.age)+"m ago at "+fmtPrice(L.startPx/TICK_MULT));
+      set("rwSub","Ignited "+new Date(now()-L.age*60000).toLocaleTimeString("en-GB",{hour12:false,hour:"2-digit",minute:"2-digit"})+" · "+Math.round(L.age)+"m ago at "+fmtPrice(L.startPx/TICK_MULT));
       set("rwExt","+"+Math.round(L.ext)+"t"); set("rwAge",Math.round(L.age)+"m");
       set("rwRetr","−"+Math.round(L.retr)+"t"); set("rwPace",(L.age>0?(L.ext/L.age).toFixed(0):"—")+" t/m");
       if(sc.survival){
