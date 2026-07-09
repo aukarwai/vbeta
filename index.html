@@ -100,7 +100,11 @@ button:active{transform:translateY(1px)}
 .sanctum.collapsed > div:not(.sighead) { display:none; }
 .sanctum.collapsed .sighead span[style*="float"] { transform:rotate(-90deg); transition:transform .2s; }
 .sanctum:not(.collapsed) .sighead span[style*="float"] { transform:rotate(0deg); transition:transform .2s; }
-.statusRow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;min-height:24px;line-height:1.4}
+.statusRow{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;align-items:center;min-height:26px;line-height:1.4;scrollbar-width:none}
+.statusRow::-webkit-scrollbar{display:none}
+.statusRow .pill{flex:0 0 auto;white-space:nowrap}
+#feedSub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:15px}
+.pill,#livePrice,.kv b{font-variant-numeric:tabular-nums}
 </style>
 </head>
 <body>
@@ -125,7 +129,7 @@ button:active{transform:translateY(1px)}
     <div class="sub">P33 Chronopapillon · 1000PEPE Time-Weather Trinity</div>
   </header>
 
-  <section class="sanctum">
+  <section class="sanctum" id="pulseCard">
     <div class="sighead"><span class="en">Pulse of the Field</span><span class="he">דֹּפֶק</span></div>
     <div class="statusRow">
       <span id="feedBadge" class="pill">BOOT</span>
@@ -133,8 +137,10 @@ button:active{transform:translateY(1px)}
       <span id="candleBadge" class="pill azure">CANDLES 0</span>
       <span id="engineBadge" class="pill">WARMUP</span>
     </div>
-    <div class="row" style="margin-top:8px">
+    <div class="statusRow" style="margin-top:8px">
       <div class="huge gold" id="livePrice">—</div>
+    </div>
+    <div class="statusRow" style="margin-top:6px">
       <span id="priceDelta" class="pill line">Δ —</span>
       <span id="clockPill" class="pill line">CLOCK —</span>
       <span id="leanPill" class="pill">LEAN —</span>
@@ -168,8 +174,8 @@ button:active{transform:translateY(1px)}
       <div class="kv"><span>Age</span><b id="rwAge">—</b></div>
       <div class="kv"><span>Retrace</span><b id="rwRetr">—</b></div>
       <div class="kv"><span>Pace</span><b id="rwPace">—</b></div>
-      <div class="kv"><span>Flip hazard · age-conditioned (shadow)</span><b id="zvHazard">—</b></div>
     </div>
+    <div class="kv"><span>Flip hazard · age-conditioned (shadow)</span><b id="zvHazard">—</b></div>
     <div class="ladlab">▲ Survival · P(extracts ≥ +T more)</div>
     <div id="survCones"></div>
     <div class="small" id="survNote">—</div>
@@ -178,8 +184,11 @@ button:active{transform:translateY(1px)}
   <section class="sanctum">
     <div class="sighead"><span class="en">Future · Ignition & Path</span><span class="he">עָתִיד</span></div>
     <div class="kv"><span>Next ignition · median wait · historical avg</span><b id="renMed">—</b></div>
+    <div class="kv"><span>· live realized</span><b id="fvWait">—</b></div>
     <div class="kv"><span>Ignition within 13m / 39m / 79m</span><b id="renCdf">—</b></div>
+    <div class="kv"><span>· live within</span><b id="fvCdf">—</b></div>
     <div class="kv"><span>Adverse-first on wins · median / 9-in-10</span><b id="advTxt">—</b></div>
+    <div class="kv"><span>· live adverse</span><b id="fvAdv">—</b></div>
     <div class="oracle" id="oracleText">—</div>
     <div class="small" style="margin-top:6px;font-size:10px;color:var(--dim)">Metrics are historical averages from training data; values refresh each candle, so countdown timers would mislead.</div>
   </section>
@@ -926,6 +935,7 @@ function render(){
     const ren=sc.renewal;
     set("renMed",Math.round(ren.med)+"m  (n="+ren.n+")");
     set("renCdf",fmtP(ren.cdf[2])+" / "+fmtP(ren.cdf[5])+" / "+fmtP(ren.cdf[8]));
+    fvRender(sc);
     const av=sc.advfirst; if(av) set("advTxt","−"+Math.round(av.med)+"t / −"+Math.round(av.p90)+"t");
     set("oracleText",narrative(sc));
     p33TryArm(sc); p33Lifecycle(sc); pastListRender();
@@ -986,6 +996,43 @@ function zvRender(sc){
   if(L&&L.dir!==0){const h=zvHazardFor(L.age);set("zvHazard",(h.p*100).toFixed(1)+"%/hr · "+h.b)}
   else set("zvHazard","—");}
 
+
+/* ==== FUTURE VALIDATOR · live realized outcomes vs stated averages (display-only) ====
+   Recomputed once per new candle from the same close-based 350t zigzag the Past ledger uses. */
+const FV={lastN:0,gaps:[],adv:[]};
+function fvMed(a){if(!a.length)return null;const s=[...a].sort((x,y)=>x-y);return s[Math.floor(s.length/2)]}
+function fvCompute(){
+  const c=CORE.c,t=CORE.t;if(!c||c.length<300||FV.lastN===c.length)return;FV.lastN=c.length;
+  const R=350,legs=[];let d=0,extreme=c[0],start=0,spx=c[0];
+  for(let i=1;i<c.length;i++){
+    if(d===0){if(c[i]-spx>=R){d=1;extreme=c[i];start=0}else if(spx-c[i]>=R){d=-1;extreme=c[i];start=0}continue}
+    if(d===1){if(c[i]>extreme)extreme=c[i];
+      if(extreme-c[i]>=R){legs.push({dir:1,start,end:i});d=-1;spx=extreme;start=i;extreme=c[i]}}
+    else{if(c[i]<extreme)extreme=c[i];
+      if(c[i]-extreme>=R){legs.push({dir:-1,start,end:i});d=1;spx=extreme;start=i;extreme=c[i]}}
+  }
+  const gaps=[],adv=[];
+  for(let j=1;j<legs.length;j++)gaps.push(legs[j].start-legs[j-1].start);
+  for(const L of legs){const s0=c[L.start];let ex=0;
+    for(let i=L.start+1;i<=L.end;i++){
+      if(L.dir===1){if(s0-c[i]>ex)ex=s0-c[i];if(c[i]-s0>=R)break}
+      else{if(c[i]-s0>ex)ex=c[i]-s0;if(s0-c[i]>=R)break}}
+    adv.push(Math.max(0,Math.round(ex)))}
+  FV.gaps=gaps.slice(-60);FV.adv=adv.slice(-60);
+}
+function fvRender(sc){
+  fvCompute();const g=FV.gaps,a=FV.adv;
+  if(!q("fvWait"))return;
+  if(g.length<5||!sc||!sc.renewal){const t="gathering "+g.length+"/5";set("fvWait",t);set("fvCdf",t);set("fvAdv",t);return}
+  const gm=fvMed(g);
+  const l13=g.filter(x=>x<=13).length/g.length,l39=g.filter(x=>x<=39).length/g.length,l79=g.filter(x=>x<=79).length/g.length;
+  set("fvWait",gm+"m (n="+g.length+")");
+  set("fvCdf",fmtP(l13)+" / "+fmtP(l39)+" / "+fmtP(l79));
+  if(a.length>=5){const am=fvMed(a),s=[...a].sort((x,y)=>x-y),ap90=s[Math.floor(0.9*(s.length-1))];
+    set("fvAdv","−"+am+"t · −"+ap90+"t");}
+  else set("fvAdv","gathering "+a.length+"/5");
+}
+
 async function start(){
   window.addEventListener("error",e=>{try{p29Log("⚠ "+(e.message||"script error")+(e.lineno?" @"+e.lineno:""))}catch(_){}});
   window.addEventListener("unhandledrejection",e=>{try{p29Log("⚠ rejection: "+((e.reason&&e.reason.message)||e.reason))}catch(_){}});
@@ -1001,6 +1048,7 @@ async function start(){
   if(P29.candles.length) P29.candles=P29.candles.map(cd=>Object.assign({src:"rest"},cd));
   await p33OpenPrimary();
   render();
+  setTimeout(()=>{const pc=q("pulseCard");if(pc){pc.style.height=pc.offsetHeight+"px";pc.style.overflow="hidden";p29Log("Pulse card height frozen at "+pc.offsetHeight+"px · shudder-proof")}},1500);
   setInterval(render,1000);
   setInterval(restResync,60*1000);
   setInterval(()=>{
