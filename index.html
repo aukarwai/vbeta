@@ -14,7 +14,7 @@
   --sans:-apple-system,system-ui,"Segoe UI",Roboto,sans-serif;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-body{margin:0;padding:12px 10px 90px;color:var(--ivory);font:14px/1.5 var(--sans);
+body{margin:0;padding:12px 10px 24px;color:var(--ivory);font:14px/1.5 var(--sans);
   background:
     radial-gradient(900px 480px at 50% -8%, rgba(217,180,95,.10), transparent 60%),
     radial-gradient(700px 500px at 50% 110%, rgba(143,184,255,.05), transparent 60%),
@@ -105,6 +105,15 @@ button:active{transform:translateY(1px)}
 .statusRow .pill{flex:0 0 auto;white-space:nowrap}
 #feedSub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:15px}
 .pill,#livePrice,.kv b{font-variant-numeric:tabular-nums}
+
+.fcPanel{margin-top:8px;display:flex;flex-direction:column;gap:7px;min-height:150px}
+.fcRow{display:grid;grid-template-columns:132px 1fr;gap:9px;align-items:start}
+.fcLab{font-size:10px;letter-spacing:.6px;color:var(--gold);padding-top:2px}
+.fcBody{font-size:12px;line-height:1.5;color:var(--ivory)}
+.oracleHead{margin-top:12px;font-size:11px;letter-spacing:1.5px;color:var(--gold)}
+.oracleHead .he{font-family:var(--serif,serif);font-size:14px}
+.oracleStory{margin-top:5px;font-size:13px;line-height:1.7;color:var(--ivory);text-align:justify;font-family:var(--serif,Georgia,serif);min-height:132px}
+.oracleStory .dropcap{float:left;font-size:34px;line-height:28px;padding:3px 8px 0 0;color:var(--gold);font-family:var(--serif,Georgia,serif);font-weight:600}
 </style>
 </head>
 <body>
@@ -189,7 +198,9 @@ button:active{transform:translateY(1px)}
     <div class="kv"><span>· live within</span><b id="fvCdf">—</b></div>
     <div class="kv"><span>Adverse-first on wins · median / 9-in-10</span><b id="advTxt">—</b></div>
     <div class="kv"><span>· live adverse</span><b id="fvAdv">—</b></div>
-    <div class="oracle" id="oracleText">—</div>
+    <div class="fcPanel" id="fcPanel"></div>
+    <div class="oracleHead"><span class="he">נְבוּאָה</span> · Oracle</div>
+    <div class="oracleStory" id="oracleStory">—</div>
     <div class="small" style="margin-top:6px;font-size:10px;color:var(--dim)">Metrics are historical averages from training data; values refresh each candle, so countdown timers would mislead.</div>
   </section>
 
@@ -198,10 +209,11 @@ button:active{transform:translateY(1px)}
       <span class="en">Past · Completed Runways</span><span class="he">עָבָר</span>
       <span style="float:right;font-size:12px;color:var(--dim)">▼</span>
     </div>
+    <div class="pastrow" id="curRunway"><span>No live runway.</span><span></span></div>
     <div id="pastList" class="small">Building the past field…</div>
     <div class="btnrow" style="margin-top:8px">
-      <button onclick="exportRunwayHistory()">Export runway history</button>
-      <button onclick="clearRunwayHistory()">Clear history</button>
+      <button onclick="exportRunwayHistory('json')">Export JSON</button>
+      <button onclick="exportRunwayHistory('txt')">Export TXT</button>
     </div>
     <div class="small" id="dailySummary" style="margin-top:6px">Daily: 0L / 0S</div>
   </section>
@@ -294,6 +306,7 @@ const PAPILLON_BLOODSTREAM_WS="wss://open-api-swap.bingx.com/swap-market";
 const PAPILLON_DEPTH_GRAVITY_CHANNEL="1000PEPE-USDT@depth20";
 const PAPILLON_PRICE_PULSE_CHANNEL="1000PEPE-USDT@ticker";
 const PAPILLON_REST_KLINES=[
+ "https://fapi.binance.com/fapi/v1/klines?symbol=1000PEPEUSDT&interval=1m&limit=1440",
  "https://open-api.bingx.com/openApi/swap/v3/quote/klines?symbol=1000PEPE-USDT&interval=1m&limit=1440",
  "https://open-api.bingx.com/openApi/swap/v2/quote/klines?symbol=1000PEPE-USDT&interval=1m&limit=1440"
 ];
@@ -325,7 +338,7 @@ function savePapillonCandles(){try{localStorage.setItem(STORE_CANDLES,JSON.strin
 
 function loadPapillonCandles(){try{const arr=JSON.parse(localStorage.getItem(STORE_CANDLES)||"[]"); if(Array.isArray(arr)){P29.candles=arr.filter(c=>c&&c.t&&c.c).slice(-MAX_CANDLES); p29Log("Restored "+P29.candles.length+" Papillon candles from memory")}}catch(e){}}
 
-async function bootstrapPapillonCandles(){let loaded=false; for(const url of PAPILLON_REST_KLINES){try{const r=await fetch(url,{cache:"no-store"}); const j=await r.json(); const data=Array.isArray(j)?j:(Array.isArray(j.data)?j.data:[]); if(data.length){P29.candles=data.map(k=>Array.isArray(k)?{t:+k[0]||+k[6]||Date.now(),o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5]||0}:{t:+(k.time||k.openTime||k.T||k.t||Date.now()),o:+(k.open||k.o),h:+(k.high||k.h),l:+(k.low||k.l),c:+(k.close||k.c),v:+(k.volume||k.v||0)}).filter(c=>c.c>0&&c.h>0&&c.l>0).slice(-MAX_CANDLES); if(P29.candles.length){P29.price=P29.candles[P29.candles.length-1].c;P29.lastTickAt=now();savePapillonCandles();loaded=true;p29Log("Bootstrapped "+P29.candles.length+" Papillon candles from BingX REST");break}}}catch(e){}} if(!loaded)p29Log("REST bootstrap unavailable; Papillon candles will build from live pulse")}
+async function bootstrapPapillonCandles(){let loaded=false; for(const url of PAPILLON_REST_KLINES){try{const r=await fetch(url,{cache:"no-store"}); const j=await r.json(); const data=Array.isArray(j)?j:(Array.isArray(j.data)?j.data:[]); if(data.length){P29.candles=data.map(k=>Array.isArray(k)?{t:+k[0]||+k[6]||Date.now(),o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5]||0}:{t:+(k.time||k.openTime||k.T||k.t||Date.now()),o:+(k.open||k.o),h:+(k.high||k.h),l:+(k.low||k.l),c:+(k.close||k.c),v:+(k.volume||k.v||0)}).filter(c=>c.c>0&&c.h>0&&c.l>0).slice(-MAX_CANDLES); if(P29.candles.length){P29.price=P29.candles[P29.candles.length-1].c;P29.lastTickAt=now();savePapillonCandles();loaded=true;p29Log("Bootstrapped "+P29.candles.length+" Papillon candles from REST ("+url.split("/")[2]+")");break}}}catch(e){}} if(!loaded)p29Log("REST bootstrap unavailable; Papillon candles will build from live pulse")}
 
 async function openPapillonBloodstream(){try{if(P29.ws)P29.ws.close()}catch(e){} const ws=new WebSocket(PAPILLON_BLOODSTREAM_WS); P29.ws=ws; ws.binaryType="arraybuffer"; ws.onopen=()=>{p29Log("Papillon bloodstream connected"); set("feedBadge","BINGX LIVE"); cls("feedBadge","pill good"); try{ws.send(JSON.stringify({id:"papillon_p30_"+P29.session+"_price",reqType:"sub",dataType:PAPILLON_PRICE_PULSE_CHANNEL})); ws.send(JSON.stringify({id:"papillon_p30_"+P29.session+"_depth",reqType:"sub",dataType:PAPILLON_DEPTH_GRAVITY_CHANNEL})); p29Log("Subscribed price pulse + depth gravity")}catch(e){p29Log("Papillon subscribe failed")}}; ws.onmessage=async(ev)=>{try{const text=await decodePapillonPulse(ev.data); if(!text)return; if(text==="Ping"||/"ping"/i.test(text)){try{ws.send("Pong")}catch(e){};try{ws.send(JSON.stringify({pong:Date.now()}))}catch(e){};return} let d=null; try{d=JSON.parse(text)}catch(e){return} if(d&&(d.ping||d.Ping)){try{ws.send(JSON.stringify({pong:d.ping||d.Ping}))}catch(e){};return} const depth=extractDepthGravity(d); if(depth)updateDepthGravityField(depth); const p=extractPricePulse(d); if(p>0){P29.prevPrice=P29.price;P29.price=p;P29.lastTickAt=now();updatePapillonCandle(p,P29.lastTickAt)}}catch(e){}}; ws.onerror=()=>p29Log("Papillon bloodstream error"); ws.onclose=()=>{p29Log("Papillon bloodstream closed; reconnecting"); set("feedBadge","RECONNECT"); cls("feedBadge","pill warn"); setTimeout(openPapillonBloodstream,2500)}}
 
@@ -765,36 +778,81 @@ function ladderHTML(arr,S){
 function coneHTML(label,p){
   return `<div class="cone"><span class="parch">${label}</span><div class="coneBar"><div class="coneFill" style="width:${Math.round(p*100)}%"></div></div><b>${fmtP(p)}</b></div>`;
 }
-function narrative(sc){
-  const side=sc.bias, arr=(side==="LONG"?sc.long:sc.short)[350], arr150=(side==="LONG"?sc.long:sc.short)[150];
-  const av=sc.advfirst, ren=sc.renewal; let s="";
+function narrativeParts(sc){
+  const side=sc.bias, arr=(side==="LONG"?sc.long:sc.short)[150];
+  const pMain=arr[0], av=sc.advfirst, ren=sc.renewal;
+  const P={now:null,dir:null,adv:null,ign:null};
   if(sc.survival && CORE.leg.dir!==0){
-    const d=CORE.leg.dir===1?"LONG":"SHORT", pT=sc.survival.cell.pT, qq=sc.survival.cell.q;
-    s+=`The ${d} runway has extracted +${Math.round(CORE.leg.ext)}t across ${Math.round(CORE.leg.age)}m (retrace ${Math.round(CORE.leg.retr)}t). Under kindred fields it went on to claim ≥+350t ${fmtP(pT[0])} of the time, ≥+650t ${fmtP(pT[3])}; median further extraction ≈ +${Math.round(qq[0])}t. `;
+    const dirTxt=CORE.leg.dir===1?"LONG":"SHORT";
+    const pT=sc.survival.cell.pT, qq=sc.survival.cell.q;
+    P.now=`The ${dirTxt} runway has extracted +${Math.round(CORE.leg.ext)}t over ${Math.round(CORE.leg.age)}m (retrace ${Math.round(CORE.leg.retr)}t). Under similar fields it went on to add ≥+350t ${fmtP(pT[0])} of the time and ≥+650t ${fmtP(pT[3])}; median further extraction ≈ +${Math.round(qq[0])}t.`;
   }
-  s+=`The field leans ${side}: the +350t race before a −350t death was won ${fmtP(arr[0])} of the time from fields like this (2026 out-of-sample calibrated); the tight −150t budget carried ${fmtP(arr150[0])}, the +650t reach ${fmtP(arr[3])}, the +950t stretch ${fmtP(arr[6])}. `;
-  if(av) s+=`Winning paths first bowed a median −${Math.round(av.med)}t, nine in ten within −${Math.round(av.p90)}t, before flight. `;
-  if(ren) s+=`Should this window pass, the next ignition historically arrived in a median ${Math.round(ren.med)}m — ${fmtP(ren.cdf[4])} within 30m, ${fmtP(ren.cdf[6])} within the hour.`;
-  return s;
+  P.dir=`Direction field reads ${side}: a fresh ${side} attempt reached +350t before −150t ${fmtP(pMain)} of the time historically (out-of-sample calibrated), +650t ${fmtP(arr[3])}, +950t ${fmtP(arr[6])}.`;
+  if(av) P.adv=`Winning paths first dipped a median −${Math.round(av.med)}t (9 in 10 stayed inside −${Math.round(av.p90)}t) before flying.`;
+  if(ren) P.ign=`If this window passes, the next runway ignition historically arrived in a median ${Math.round(ren.med)}m (${fmtP(ren.cdf[4])} within 30m, ${fmtP(ren.cdf[6])} within 60m).`;
+  return P;
 }
-function pastListRender(){
-  const c=CORE.c; if(c.length<300) return;
-  const legs=[]; const R=350; let d=0,extreme=c[0],start=0,spx=c[0];
+const LBL={L_NOW:"עַכְשָׁיו · Runway now",L_DIR:"כִּוּוּן · Direction field",L_ADV:"נְסִיגָה · Adverse path",L_IGN:"הַצָּתָה · Next ignition"};
+function renderForecast(sc){
+  const P=narrativeParts(sc);
+  const rows=[["L_NOW",P.now],["L_DIR",P.dir],["L_ADV",P.adv],["L_IGN",P.ign]];
+  const panel=q("fcPanel");
+  if(panel){panel.innerHTML=rows.filter(r=>r[1]).map(r=>
+    `<div class="fcRow"><span class="fcLab">${LBL[r[0]]}</span><span class="fcBody">${r[1]}</span></div>`).join("");}
+  // oracle story = the four sentences woven back into flowing prose, drop-cap styled
+  const story=[P.now,P.dir,P.adv,P.ign].filter(Boolean).join(" ");
+  const oc=q("oracleStory");
+  if(oc)oc.innerHTML=story?`<span class="dropcap">${story.charAt(0)}</span>${story.slice(1)}`:"—";
+}
+function fmtHM(ms){return new Date(ms).toLocaleTimeString("en-GB",{hour12:false,hour:"2-digit",minute:"2-digit"})}
+function fmtDay(ms){return new Date(ms).toLocaleDateString("en-GB",{weekday:"short",day:"2-digit",month:"short",year:"numeric"})}
+function extractAllLegs(){
+  const c=CORE.c;if(!c||c.length<300)return[];const legs=[],R=350;let d=0,extreme=c[0],start=0,spx=c[0];
   for(let i=1;i<c.length;i++){
-    if(d===0){ if(c[i]-spx>=R){d=1;extreme=c[i];start=0;} else if(spx-c[i]>=R){d=-1;extreme=c[i];start=0;} continue; }
-    if(d===1){ if(c[i]>extreme)extreme=c[i];
-      if(extreme-c[i]>=R){legs.push({dir:1,start,end:i,ext:extreme-spx});d=-1;spx=extreme;start=i;extreme=c[i];}}
-    else{ if(c[i]<extreme)extreme=c[i];
-      if(c[i]-extreme>=R){legs.push({dir:-1,start,end:i,ext:spx-extreme});d=1;spx=extreme;start=i;extreme=c[i];}}
+    if(d===0){if(c[i]-spx>=R){d=1;extreme=c[i];start=0}else if(spx-c[i]>=R){d=-1;extreme=c[i];start=0}continue}
+    if(d===1){if(c[i]>extreme)extreme=c[i];if(extreme-c[i]>=R){legs.push({dir:1,start,end:i,ext:extreme-spx});d=-1;spx=extreme;start=i;extreme=c[i]}}
+    else{if(c[i]<extreme)extreme=c[i];if(c[i]-extreme>=R){legs.push({dir:-1,start,end:i,ext:spx-extreme});d=1;spx=extreme;start=i;extreme=c[i]}}
   }
-  const el=q("pastList"); if(!el) return;
-  el.innerHTML=legs.slice(-20).reverse().map(L=>{
-    const t=new Date(CORE.t[L.start]).toLocaleTimeString("en-GB",{hour12:false,hour:"2-digit",minute:"2-digit"});
-    const tDone=new Date(CORE.t[L.end]).toLocaleTimeString("en-GB",{hour12:false,hour:"2-digit",minute:"2-digit"});
-    const dir=L.dir===1?"LONG":"SHORT", cl=L.dir===1?"gold":"wine";
-    return `<div class="pastrow"><span><span class="tri ${cl}">▲</span> <b class="${cl}">${dir}</b> ${t}→${tDone}</span><span>+${Math.round(L.ext)}t · ${L.end-L.start}m</span></div>`;
-  }).join("")||"No completed runways in memory yet.";
+  return legs;
 }
+function pastRowHTML(L){
+    const t=fmtHM(CORE.t[L.start]),tD=fmtHM(CORE.t[L.end]);
+    const dir=L.dir===1?"LONG":"SHORT",cl=L.dir===1?"gold":"wine";
+    const ip=fmtPrice(CORE.c[L.start]/TICK_MULT);
+    return `<div class="pastrow"><span><span class="tri ${cl}">▲</span> <b class="${cl}">${dir}</b> ${t}→${tD} @ ${ip}</span><span>+${Math.round(L.ext)}t · ${L.end-L.start}m</span></div>`;}
+function pastDayHTML(label){return `<div class="pastrow" style="opacity:.65;font-size:11px;letter-spacing:.5px"><span class="he" style="float:none">${label}</span><span></span></div>`;}
+function pastListRender(){
+  const el=q("pastList");if(!el)return;
+  const legs=extractAllLegs();
+  // current (open) runway line
+  updateCurRunway(legs);
+  updateDailySummary(legs);
+  if(!legs.length){el.innerHTML="No completed runways in memory yet.";return}
+  // newest first, grouped by day with a date header when the day changes
+  let html="",lastDay="";
+  for(let k=legs.length-1;k>=0;k--){const L=legs[k];const day=fmtDay(CORE.t[L.start]);
+    if(day!==lastDay){html+=pastDayHTML(day);lastDay=day}
+    html+=pastRowHTML(L);}
+  el.innerHTML=html;
+}
+function updateCurRunway(legs){
+  const el=q("curRunway");if(!el)return;
+  const c=CORE.c;if(!c||!c.length){return}
+  const lastEnd=legs.length?legs[legs.length-1].end:0;
+  const dir=(typeof CORE!=="undefined"&&CORE.leg&&CORE.leg.dir)||0;
+  if(dir!==0){const sPx=CORE.leg.startPx?CORE.leg.startPx:c[CORE.leg.start||lastEnd];
+    const st=CORE.t[CORE.leg.start!=null?CORE.leg.start:lastEnd];
+    const age=Math.round(CORE.leg.age!=null?CORE.leg.age:(c.length-1-lastEnd));
+    const dirTxt=dir===1?"LONG":"SHORT";
+    const mv=Math.round(Math.abs(c[c.length-1]-(sPx||c[lastEnd])));
+    setCurRunway(dirTxt,dir,fmtHM(st),age,mv,sPx);
+  } else setCurRunway(null);
+}
+
+function setCurRunway(dirTxt,dir,startHM,age,mv,sPx){const el=q("curRunway");if(!el)return;
+  if(!dirTxt){el.innerHTML='<span>No live runway · awaiting ignition.</span><span></span>';return}
+  const cl=dir===1?"gold":"wine";const ip=(sPx!=null)?fmtPrice(sPx/TICK_MULT):"—";
+  el.innerHTML=`<span>▶ LIVE <b class="${cl}">${dirTxt}</b> · since ${startHM} @ ${ip} · ${age}m</span><span>${mv}t / 350t</span>`;}
 function p33TryArm(sc){
   const ts=now(), price=P29.price;
   if(!price||ts<P32.cooldownUntil){p32SetWarmupGate(ts<P32.cooldownUntil?"COOLDOWN":"NO PRICE","warn");return;}
@@ -923,7 +981,7 @@ function render(){
     if(L.dir!==0){
       const dTxt=L.dir===1?"LONG":"SHORT";
       set("rwMain",dTxt+" RUNWAY ALIVE"); cls("rwMain","big "+(L.dir===1?"gold":"wine"));
-      set("rwSub","Ignited "+new Date(now()-L.age*60000).toLocaleTimeString("en-GB",{hour12:false,hour:"2-digit",minute:"2-digit"})+" · "+Math.round(L.age)+"m ago at "+fmtPrice(L.startPx/TICK_MULT));
+      {const _si=(L.startIdx!=null&&L.startIdx>=0)?L.startIdx:null;const _t0=(_si!=null&&CORE.t&&CORE.t[_si]!=null)?CORE.t[_si]:null;const _mins=_t0!=null?Math.max(0,Math.round((now()-_t0)/60000)):Math.round(L.age);const _hm=_t0!=null?new Date(_t0).toLocaleTimeString("en-GB",{hour12:false,hour:"2-digit",minute:"2-digit"}):"—";set("rwSub","Ignited "+_hm+" · "+_mins+"m ago at "+fmtPrice(L.startPx/TICK_MULT));}
       set("rwExt","+"+Math.round(L.ext)+"t"); set("rwAge",Math.round(L.age)+"m");
       set("rwRetr","−"+Math.round(L.retr)+"t"); set("rwPace",(L.age>0?(L.ext/L.age).toFixed(0):"—")+" t/m");
       if(sc.survival){
@@ -937,7 +995,7 @@ function render(){
     set("renCdf",fmtP(ren.cdf[2])+" / "+fmtP(ren.cdf[5])+" / "+fmtP(ren.cdf[8]));
     fvRender(sc);
     const av=sc.advfirst; if(av) set("advTxt","−"+Math.round(av.med)+"t / −"+Math.round(av.p90)+"t");
-    set("oracleText",narrative(sc));
+    renderForecast(sc);
     p33TryArm(sc); p33Lifecycle(sc); pastListRender();
   }
   renderP33Evidence();
@@ -1071,21 +1129,35 @@ function logRunwayCompletion(r){
   P32.history=P32.history||[]; P32.history.unshift(entry); P32.history=P32.history.slice(0,500);
   saveP32History(); updateDailySummary();
 }
-function exportRunwayHistory(){
-  const data={exportedAt:new Date().toISOString(),symbol:PAPILLON_SYMBOL,totalRunways:(P32.history||[]).length,entries:P32.history||[]};
-  const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
-  const url=URL.createObjectURL(blob); const a=document.createElement("a");
-  a.href=url; a.download="runway_history_"+Date.now()+".json"; a.click(); URL.revokeObjectURL(url);
-  p29Log("Runway history exported: "+(P32.history||[]).length+" entries");
+function exportRunwayHistory(fmt){
+  fmt=fmt||"json";const legs=extractAllLegs();
+  if(!legs.length){p29Log("Export skipped · no completed runways yet");alert("No completed runways to export yet.");return}
+  const rows=legs.map(L=>({date:fmtDay(CORE.t[L.start]),start:fmtHM(CORE.t[L.start]),done:fmtHM(CORE.t[L.end]),side:L.dir===1?"LONG":"SHORT",extractedT:Math.round(L.ext),durationM:L.end-L.start}));
+  let blob,ext;
+  if(fmt==="txt"){
+    let out="CHRONOPAPILLON · Completed Runways\nExported "+new Date().toLocaleString("en-GB")+" · "+PAPILLON_SYMBOL+"\nTotal runways: "+rows.length+"\n";
+    let lastDay="";
+    for(const r of rows){if(r.date!==lastDay){out+="\n=== "+r.date+" ===\n";lastDay=r.date}
+      out+=r.side.padEnd(5)+" "+r.start+"\u2192"+r.done+" · +"+r.extractedT+"t · "+r.durationM+"m\n";}
+    blob=new Blob([out],{type:"text/plain"});ext="txt";
+  } else {
+    blob=new Blob([JSON.stringify({exportedAt:new Date().toISOString(),symbol:PAPILLON_SYMBOL,totalRunways:rows.length,runways:rows},null,2)],{type:"application/json"});ext="json";
+  }
+  const url=URL.createObjectURL(blob),a=document.createElement("a");
+  a.href=url;a.download="runway_history_"+Date.now()+"."+ext;a.click();URL.revokeObjectURL(url);
+  p29Log("Runway history exported ("+fmt.toUpperCase()+"): "+rows.length+" runways");
 }
 function clearRunwayHistory(){
   if(!confirm("Permanently clear all runway history?"))return;
   P32.history=[]; saveP32History(); p29Log("Runway history cleared"); updateDailySummary();
 }
-function updateDailySummary(){
-  const today=new Date().toDateString(); const hist=P32.history||[];
-  const te=hist.filter(e=>new Date(e.closedAt||0).toDateString()===today);
-  set("dailySummary","Daily: "+te.filter(e=>e.side==="LONG").length+"L / "+te.filter(e=>e.side==="SHORT").length+"S");
+function updateDailySummary(legs){
+  legs=legs||extractAllLegs();const today=new Date().toDateString();
+  let L=0,S=0,tL=0,tS=0;
+  for(const g of legs){if(new Date(CORE.t[g.start]).toDateString()!==today)continue;
+    if(g.dir===1){L++;tL+=g.ext}else{S++;tS+=g.ext}}
+  const tot=L+S;
+  set("dailySummary",tot?("Today "+fmtDay(Date.now())+" · "+L+"L / "+S+"S · "+tot+" runways · extracted +"+Math.round(tL+tS)+"t"):"Today "+fmtDay(Date.now())+" · no completed runways yet");
 }
 function saveP32History(){try{localStorage.setItem("P32_RUNWAY_HISTORY",JSON.stringify(P32.history||[]))}catch(e){}}
 function loadP32History(){try{P32.history=JSON.parse(localStorage.getItem("P32_RUNWAY_HISTORY")||"[]")}catch(e){P32.history=[]}}
