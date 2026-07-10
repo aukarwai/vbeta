@@ -114,6 +114,10 @@ button:active{transform:translateY(1px)}
 .oracleHead .he{font-family:var(--serif,serif);font-size:14px}
 .oracleStory{margin-top:5px;font-size:13px;line-height:1.7;color:var(--ivory);text-align:justify;font-family:var(--serif,Georgia,serif);min-height:132px}
 .oracleStory .dropcap{float:left;font-size:34px;line-height:28px;padding:3px 8px 0 0;color:var(--gold);font-family:var(--serif,Georgia,serif);font-weight:600}
+
+.btnrow{display:flex;gap:5px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+.btnrow::-webkit-scrollbar{display:none}
+.btnrow button{flex:0 0 auto;padding:5px 9px;font-size:10.5px;white-space:nowrap;border-radius:8px}
 </style>
 </head>
 <body>
@@ -338,7 +342,9 @@ function savePapillonCandles(){try{localStorage.setItem(STORE_CANDLES,JSON.strin
 
 function loadPapillonCandles(){try{const arr=JSON.parse(localStorage.getItem(STORE_CANDLES)||"[]"); if(Array.isArray(arr)){P29.candles=arr.filter(c=>c&&c.t&&c.c).slice(-MAX_CANDLES); p29Log("Restored "+P29.candles.length+" Papillon candles from memory")}}catch(e){}}
 
-async function bootstrapPapillonCandles(){let loaded=false; for(const url of PAPILLON_REST_KLINES){try{const r=await fetch(url,{cache:"no-store"}); const j=await r.json(); const data=Array.isArray(j)?j:(Array.isArray(j.data)?j.data:[]); if(data.length){P29.candles=data.map(k=>Array.isArray(k)?{t:+k[0]||+k[6]||Date.now(),o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5]||0}:{t:+(k.time||k.openTime||k.T||k.t||Date.now()),o:+(k.open||k.o),h:+(k.high||k.h),l:+(k.low||k.l),c:+(k.close||k.c),v:+(k.volume||k.v||0)}).filter(c=>c.c>0&&c.h>0&&c.l>0).slice(-MAX_CANDLES); if(P29.candles.length){P29.price=P29.candles[P29.candles.length-1].c;P29.lastTickAt=now();savePapillonCandles();loaded=true;p29Log("Bootstrapped "+P29.candles.length+" Papillon candles from REST ("+url.split("/")[2]+")");break}}}catch(e){}} if(!loaded)p29Log("REST bootstrap unavailable; Papillon candles will build from live pulse")}
+async function bootstrapPapillonCandles(){let loaded=false; for(const url of PAPILLON_REST_KLINES){try{const r=await fetch(url,{cache:"no-store"}); const j=await r.json(); const data=Array.isArray(j)?j:(Array.isArray(j.data)?j.data:[]); if(data.length){const seed=data.map(k=>Array.isArray(k)?{t:+k[0]||+k[6]||Date.now(),o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5]||0}:{t:+(k.time||k.openTime||k.T||k.t||Date.now()),o:+(k.open||k.o),h:+(k.high||k.h),l:+(k.low||k.l),c:+(k.close||k.c),v:+(k.volume||k.v||0)}).filter(c=>c.c>0&&c.h>0&&c.l>0);
+        const mm=new Map(); for(const c of (P29.candles||[])) mm.set(Math.round(c.t/60000),c); for(const c of seed) mm.set(Math.round(c.t/60000),c);
+        P29.candles=Array.from(mm.values()).sort((a,b)=>a.t-b.t).slice(-MAX_CANDLES); if(P29.candles.length){P29.price=P29.candles[P29.candles.length-1].c;P29.lastTickAt=now();savePapillonCandles();loaded=true;p29Log("Bootstrapped "+P29.candles.length+" Papillon candles from REST ("+url.split("/")[2]+")");break}}}catch(e){}} if(!loaded)p29Log("REST bootstrap unavailable; Papillon candles will build from live pulse")}
 
 async function openPapillonBloodstream(){try{if(P29.ws)P29.ws.close()}catch(e){} const ws=new WebSocket(PAPILLON_BLOODSTREAM_WS); P29.ws=ws; ws.binaryType="arraybuffer"; ws.onopen=()=>{p29Log("Papillon bloodstream connected"); set("feedBadge","BINGX LIVE"); cls("feedBadge","pill good"); try{ws.send(JSON.stringify({id:"papillon_p30_"+P29.session+"_price",reqType:"sub",dataType:PAPILLON_PRICE_PULSE_CHANNEL})); ws.send(JSON.stringify({id:"papillon_p30_"+P29.session+"_depth",reqType:"sub",dataType:PAPILLON_DEPTH_GRAVITY_CHANNEL})); p29Log("Subscribed price pulse + depth gravity")}catch(e){p29Log("Papillon subscribe failed")}}; ws.onmessage=async(ev)=>{try{const text=await decodePapillonPulse(ev.data); if(!text)return; if(text==="Ping"||/"ping"/i.test(text)){try{ws.send("Pong")}catch(e){};try{ws.send(JSON.stringify({pong:Date.now()}))}catch(e){};return} let d=null; try{d=JSON.parse(text)}catch(e){return} if(d&&(d.ping||d.Ping)){try{ws.send(JSON.stringify({pong:d.ping||d.Ping}))}catch(e){};return} const depth=extractDepthGravity(d); if(depth)updateDepthGravityField(depth); const p=extractPricePulse(d); if(p>0){P29.prevPrice=P29.price;P29.price=p;P29.lastTickAt=now();updatePapillonCandle(p,P29.lastTickAt)}}catch(e){}}; ws.onerror=()=>p29Log("Papillon bloodstream error"); ws.onclose=()=>{p29Log("Papillon bloodstream closed; reconnecting"); set("feedBadge","RECONNECT"); cls("feedBadge","pill warn"); setTimeout(openPapillonBloodstream,2500)}}
 
@@ -821,18 +827,38 @@ function pastRowHTML(L){
     const ip=fmtPrice(CORE.c[L.start]/TICK_MULT),fp=fmtPrice(CORE.c[L.end]/TICK_MULT);
     return `<div class="pastrow"><span><span class="tri ${cl}">▲</span> <b class="${cl}">${dir}</b> ${t}→${tD} @ ${ip}→${fp}</span><span>+${Math.round(L.ext)}t · ${L.end-L.start}m</span></div>`;}
 function pastDayHTML(label){return `<div class="pastrow" style="opacity:.65;font-size:11px;letter-spacing:.5px"><span class="he" style="float:none">${label}</span><span></span></div>`;}
+/* ==== permanent completed-runway archive (survives candle-buffer eviction & reloads) ==== */
+function legKey(t0){return String(Math.round(t0/60000))}
+function archiveLegs(legs){
+  P32.history=P32.history||[];
+  const seen=new Set(P32.history.map(r=>r.k));
+  let added=0;
+  for(const L of legs){
+    const t0=CORE.t[L.start], t1=CORE.t[L.end]; if(t0==null||t1==null)continue;
+    const k=legKey(t0); if(seen.has(k))continue;
+    P32.history.push({k,dir:L.dir,t0,t1,ipx:CORE.c[L.start],fpx:CORE.c[L.end],ext:Math.round(L.ext),dur:L.end-L.start});
+    seen.add(k); added++;
+  }
+  if(added){P32.history.sort((a,b)=>a.t0-b.t0);saveP32History()}
+  return P32.history;
+}
+function archivedRows(){ // normalized, newest-first, for rendering + export
+  return (P32.history||[]).slice().sort((a,b)=>b.t0-a.t0);
+}
 function pastListRender(){
   const el=q("pastList");if(!el)return;
   const legs=extractAllLegs();
-  // current (open) runway line
   updateCurRunway(legs);
+  archiveLegs(legs);
+  const rows=archivedRows();
   updateDailySummary(legs);
-  if(!legs.length){el.innerHTML="No completed runways in memory yet.";return}
-  // newest first, grouped by day with a date header when the day changes
+  if(!rows.length){el.innerHTML="No completed runways in memory yet.";return}
   let html="",lastDay="";
-  for(let k=legs.length-1;k>=0;k--){const L=legs[k];const day=fmtDay(CORE.t[L.start]);
+  for(const r of rows){const day=fmtDay(r.t0);
     if(day!==lastDay){html+=pastDayHTML(day);lastDay=day}
-    html+=pastRowHTML(L);}
+    const dir=r.dir===1?"LONG":"SHORT",cl=r.dir===1?"gold":"wine";
+      const t=fmtHM(r.t0),tD=fmtHM(r.t1),ip=fmtPrice(r.ipx/TICK_MULT),fp=fmtPrice(r.fpx/TICK_MULT);
+      html+=`<div class="pastrow"><span><span class="tri ${cl}">▲</span> <b class="${cl}">${dir}</b> ${t}→${tD} @ ${ip}→${fp}</span><span>+${r.ext}t · ${r.dur}m</span></div>`;}
   el.innerHTML=html;
 }
 function updateCurRunway(legs){
@@ -986,9 +1012,9 @@ function render(){
       set("rwRetr","−"+Math.round(L.retr)+"t"); set("rwPace",(L.age>0?(L.ext/L.age).toFixed(0):"—")+" t/m");
       if(sc.survival){
         const pT=sc.survival.cell.pT;
-        q("survCones").innerHTML=coneHTML("+350t",pT[0])+coneHTML("+550t",pT[2])+coneHTML("+750t",pT[4])+coneHTML("+950t",pT[6]);
+        q("survCones").innerHTML=coneHTML("+350t more",pT[0])+coneHTML("+550t more",pT[2])+coneHTML("+750t more",pT[4])+coneHTML("+950t more",pT[6]);
         set("survNote","cell n="+sc.survival.cell.n+" · median further +"+Math.round(sc.survival.cell.q[0])+"t · p90 +"+Math.round(sc.survival.cell.q[2])+"t · "+["calm","normal","hot"][sc.survival.cb]+" clock");
-      }else{q("survCones").innerHTML="";set("survNote","Runway too young for the survival table.");}
+      }else{q("survCones").innerHTML="";set("survNote","Runway <350t young — read the Direction Field ladders for odds until the survival table opens.");}
     }else{set("rwMain","NO ACTIVE RUNWAY");cls("rwMain","big parch");set("rwSub","Between ignitions.");q("survCones").innerHTML="";set("survNote","—");}
     const ren=sc.renewal;
     set("renMed",Math.round(ren.med)+"m  (n="+ren.n+")");
@@ -1130,9 +1156,9 @@ function logRunwayCompletion(r){
   saveP32History(); updateDailySummary();
 }
 function exportRunwayHistory(fmt){
-  fmt=fmt||"json";const legs=extractAllLegs();
+  fmt=fmt||"json";archiveLegs(extractAllLegs());const legs=archivedRows().slice().reverse().map(r=>({start:r.t0/60000|0,end:r.t1/60000|0,dir:r.dir,ext:r.ext,dur:r.dur,t0:r.t0,t1:r.t1,ipx:r.ipx,fpx:r.fpx}));
   if(!legs.length){p29Log("Export skipped · no completed runways yet");alert("No completed runways to export yet.");return}
-  const rows=legs.map(L=>({date:fmtDay(CORE.t[L.start]),start:fmtHM(CORE.t[L.start]),done:fmtHM(CORE.t[L.end]),side:L.dir===1?"LONG":"SHORT",ignitionPrice:fmtPrice(CORE.c[L.start]/TICK_MULT),completionPrice:fmtPrice(CORE.c[L.end]/TICK_MULT),extractedT:Math.round(L.ext),durationM:L.end-L.start}));
+  const rows=legs.map(L=>({date:fmtDay(L.t0),start:fmtHM(L.t0),done:fmtHM(L.t1),side:L.dir===1?"LONG":"SHORT",ignitionPrice:fmtPrice(L.ipx/TICK_MULT),completionPrice:fmtPrice(L.fpx/TICK_MULT),extractedT:L.ext,durationM:L.dur}));
   let blob,ext;
   if(fmt==="txt"){
     let out="CHRONOPAPILLON · Completed Runways\nExported "+new Date().toLocaleString("en-GB")+" · "+PAPILLON_SYMBOL+"\nTotal runways: "+rows.length+"\n";
@@ -1152,10 +1178,10 @@ function clearRunwayHistory(){
   P32.history=[]; saveP32History(); p29Log("Runway history cleared"); updateDailySummary();
 }
 function updateDailySummary(legs){
-  legs=legs||extractAllLegs();const today=new Date().toDateString();
-  let L=0,S=0,tL=0,tS=0;
-  for(const g of legs){if(new Date(CORE.t[g.start]).toDateString()!==today)continue;
-    if(g.dir===1){L++;tL+=g.ext}else{S++;tS+=g.ext}}
+  const rows=(P32.history&&P32.history.length)?P32.history:(legs||extractAllLegs()).map(L=>({t0:CORE.t[L.start],t1:CORE.t[L.end],dir:L.dir,ext:Math.round(L.ext)}));
+  const today=new Date().toDateString();let L=0,S=0,tL=0,tS=0;
+  for(const r of rows){const t0=r.t0!=null?r.t0:CORE.t[r.start];if(t0==null||new Date(t0).toDateString()!==today)continue;
+    if(r.dir===1){L++;tL+=r.ext}else{S++;tS+=r.ext}}
   const tot=L+S;
   set("dailySummary",tot?("Today "+fmtDay(Date.now())+" · "+L+"L / "+S+"S · "+tot+" runways · extracted +"+Math.round(tL+tS)+"t"):"Today "+fmtDay(Date.now())+" · no completed runways yet");
 }
