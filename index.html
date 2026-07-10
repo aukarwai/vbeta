@@ -818,8 +818,8 @@ function extractAllLegs(){
 function pastRowHTML(L){
     const t=fmtHM(CORE.t[L.start]),tD=fmtHM(CORE.t[L.end]);
     const dir=L.dir===1?"LONG":"SHORT",cl=L.dir===1?"gold":"wine";
-    const ip=fmtPrice(CORE.c[L.start]/TICK_MULT);
-    return `<div class="pastrow"><span><span class="tri ${cl}">▲</span> <b class="${cl}">${dir}</b> ${t}→${tD} @ ${ip}</span><span>+${Math.round(L.ext)}t · ${L.end-L.start}m</span></div>`;}
+    const ip=fmtPrice(CORE.c[L.start]/TICK_MULT),fp=fmtPrice(CORE.c[L.end]/TICK_MULT);
+    return `<div class="pastrow"><span><span class="tri ${cl}">▲</span> <b class="${cl}">${dir}</b> ${t}→${tD} @ ${ip}→${fp}</span><span>+${Math.round(L.ext)}t · ${L.end-L.start}m</span></div>`;}
 function pastDayHTML(label){return `<div class="pastrow" style="opacity:.65;font-size:11px;letter-spacing:.5px"><span class="he" style="float:none">${label}</span><span></span></div>`;}
 function pastListRender(){
   const el=q("pastList");if(!el)return;
@@ -840,7 +840,7 @@ function updateCurRunway(legs){
   const c=CORE.c;if(!c||!c.length){return}
   const lastEnd=legs.length?legs[legs.length-1].end:0;
   const dir=(typeof CORE!=="undefined"&&CORE.leg&&CORE.leg.dir)||0;
-  if(dir!==0){const sPx=CORE.leg.startPx?CORE.leg.startPx:c[CORE.leg.start||lastEnd];
+  if(dir!==0){const _gi=CORE.leg.startIdx;const sPx=(_gi!=null&&CORE.c&&CORE.c[_gi]!=null)?CORE.c[_gi]:(CORE.leg.startPx?CORE.leg.startPx:c[CORE.leg.start||lastEnd]);
     const st=CORE.t[CORE.leg.start!=null?CORE.leg.start:lastEnd];
     const age=Math.round(CORE.leg.age!=null?CORE.leg.age:(c.length-1-lastEnd));
     const dirTxt=dir===1?"LONG":"SHORT";
@@ -981,7 +981,7 @@ function render(){
     if(L.dir!==0){
       const dTxt=L.dir===1?"LONG":"SHORT";
       set("rwMain",dTxt+" RUNWAY ALIVE"); cls("rwMain","big "+(L.dir===1?"gold":"wine"));
-      {const _si=(L.startIdx!=null&&L.startIdx>=0)?L.startIdx:null;const _t0=(_si!=null&&CORE.t&&CORE.t[_si]!=null)?CORE.t[_si]:null;const _mins=_t0!=null?Math.max(0,Math.round((now()-_t0)/60000)):Math.round(L.age);const _hm=_t0!=null?new Date(_t0).toLocaleTimeString("en-GB",{hour12:false,hour:"2-digit",minute:"2-digit"}):"—";set("rwSub","Ignited "+_hm+" · "+_mins+"m ago at "+fmtPrice(L.startPx/TICK_MULT));}
+      {const _si=(L.startIdx!=null&&L.startIdx>=0)?L.startIdx:null;const _t0=(_si!=null&&CORE.t&&CORE.t[_si]!=null)?CORE.t[_si]:null;const _mins=_t0!=null?Math.max(0,Math.round((now()-_t0)/60000)):Math.round(L.age);const _hm=_t0!=null?new Date(_t0).toLocaleTimeString("en-GB",{hour12:false,hour:"2-digit",minute:"2-digit"}):"—";set("rwSub","Ignited "+_hm+" · "+_mins+"m ago at "+fmtPrice(((L.startIdx!=null&&CORE.c&&CORE.c[L.startIdx]!=null)?CORE.c[L.startIdx]:L.startPx)/TICK_MULT));}
       set("rwExt","+"+Math.round(L.ext)+"t"); set("rwAge",Math.round(L.age)+"m");
       set("rwRetr","−"+Math.round(L.retr)+"t"); set("rwPace",(L.age>0?(L.ext/L.age).toFixed(0):"—")+" t/m");
       if(sc.survival){
@@ -1132,13 +1132,13 @@ function logRunwayCompletion(r){
 function exportRunwayHistory(fmt){
   fmt=fmt||"json";const legs=extractAllLegs();
   if(!legs.length){p29Log("Export skipped · no completed runways yet");alert("No completed runways to export yet.");return}
-  const rows=legs.map(L=>({date:fmtDay(CORE.t[L.start]),start:fmtHM(CORE.t[L.start]),done:fmtHM(CORE.t[L.end]),side:L.dir===1?"LONG":"SHORT",extractedT:Math.round(L.ext),durationM:L.end-L.start}));
+  const rows=legs.map(L=>({date:fmtDay(CORE.t[L.start]),start:fmtHM(CORE.t[L.start]),done:fmtHM(CORE.t[L.end]),side:L.dir===1?"LONG":"SHORT",ignitionPrice:fmtPrice(CORE.c[L.start]/TICK_MULT),completionPrice:fmtPrice(CORE.c[L.end]/TICK_MULT),extractedT:Math.round(L.ext),durationM:L.end-L.start}));
   let blob,ext;
   if(fmt==="txt"){
     let out="CHRONOPAPILLON · Completed Runways\nExported "+new Date().toLocaleString("en-GB")+" · "+PAPILLON_SYMBOL+"\nTotal runways: "+rows.length+"\n";
     let lastDay="";
     for(const r of rows){if(r.date!==lastDay){out+="\n=== "+r.date+" ===\n";lastDay=r.date}
-      out+=r.side.padEnd(5)+" "+r.start+"\u2192"+r.done+" · +"+r.extractedT+"t · "+r.durationM+"m\n";}
+      out+=r.side.padEnd(5)+" "+r.start+"\u2192"+r.done+" @ "+r.ignitionPrice+"\u2192"+r.completionPrice+" · +"+r.extractedT+"t · "+r.durationM+"m\n";}
     blob=new Blob([out],{type:"text/plain"});ext="txt";
   } else {
     blob=new Blob([JSON.stringify({exportedAt:new Date().toISOString(),symbol:PAPILLON_SYMBOL,totalRunways:rows.length,runways:rows},null,2)],{type:"application/json"});ext="json";
